@@ -1,11 +1,10 @@
 # -*- coding: utf-8 -*-
-
 #%%
-import math
+
 import random
-import torch as th
 import numpy as np
 import pandas as pd
+from torch import nn
 from abc import ABC
 from random import choice
 from kaggle_environments import make
@@ -15,6 +14,11 @@ from kaggle_environments.envs.hungry_geese.hungry_geese import (
     Action,
     row_col,
 )
+
+#%%
+
+
+# helper function to determine the opposite move the input. Returns values determined by the kaggle env.
 
 
 def opposite(subject):
@@ -28,6 +32,10 @@ def opposite(subject):
         return Action.EAST.name
 
 
+# function returns the position of the closest food out of the guaranteed two.
+# implements l2 norm without the square root.
+
+
 def get_nearest_food(agent_positions, food_positions, player_index):
     dist0 = pow(food_positions[0][0] - agent_positions[player_index][0][0], 2) + pow(
         food_positions[0][1] - agent_positions[player_index][0][1], 2
@@ -39,6 +47,9 @@ def get_nearest_food(agent_positions, food_positions, player_index):
         return food_positions[0]
     else:
         return food_positions[1]
+
+
+# helper function to determine the 4 available for all 4 agents.
 
 
 def get_potential_moves(agent_positions):
@@ -67,6 +78,10 @@ def get_potential_moves(agent_positions):
     return all_potential_moves
 
 
+# funtion accepts output from potential moves and returns valid (non terminating) moves
+# by excluding the opponents' current position
+
+
 def get_valid_moves(agent_positions, potential_moves, player_index):
     this_agent_potential_moves = potential_moves.copy()
     this_agent_potential_moves = this_agent_potential_moves[player_index]
@@ -86,28 +101,40 @@ def get_valid_moves(agent_positions, potential_moves, player_index):
     return this_agent_potential_moves
 
 
-def get_all_geese(observation, configuration):
+# returns the position of all agents as an array of tuples
+
+
+def get_all_geese(observation):
     all_agent_positions = []
     intermediate_array = []
     for goose in observation.geese:
         for chunk in goose:
-            cord_tuple = row_col(chunk, configuration.columns)
+            cord_tuple = row_col(chunk, 11)
             intermediate_array.append(list(cord_tuple))
         all_agent_positions.append(intermediate_array)
         intermediate_array = []
     return all_agent_positions
 
 
-def get_all_food(observation, configuration):
+# returns the position of all food as an array of tuples
+
+
+def get_all_food(observation):
     food_positions = [-1, -1]
     for food in observation.food:
         index_in_env = (observation.food).index(food)
-        cord_tuple = row_col(food, configuration.columns)
+        cord_tuple = row_col(food, 11)
         food_positions[index_in_env] = list(cord_tuple)
     return food_positions
 
 
 last_move = [None, None, None, None]
+
+
+# this functions does most of the heavy lifting. It is responsible for returning the action
+# to be taken by the current agent. It does so by selecting the move that will minimize
+# the distance between the agent's head-position and the nearest food. The logic will
+# ensure the agent does not collide with opponents unless there is no other possibility
 
 
 def get_move(
@@ -209,6 +236,9 @@ def get_move(
     return x
 
 
+# simple testing output for diagnosing issues with helper functions
+
+
 def print_diagnostics(
     player_index, agent_positions, food_positions, near_food, potential_moves
 ):
@@ -229,34 +259,29 @@ def print_diagnostics(
     print(potential_moves)
 
 
-def print_table(player_index, agent_positions, food_positions, near_food, valid_moves):
-    # creating board diagnostic
-    print("\n")
-    print("Agent: " + str(player_index))
-    print("Agent Head :" + str(agent_positions[player_index][0]))
-    print("Near Food: " + str(near_food))
-    print("Food Positions: " + str(food_positions))
+# returns a representation of the game board as an array of various integers
+
+
+def get_table(player_index, agent_positions, food_positions, near_food, valid_moves):
+
     table = np.chararray((7, 11), unicode=True)
-    table[:] = "-"
+    table[:] = "9"
     for agent in agent_positions:
         for e in agent:
             table[e[0]][e[1]] = agent_positions.index(agent)
-            if agent_positions.index(agent) == player_index:
-                table[e[0]][e[1]] = "■"
-            if agent.index(e) == 0:
-                table[e[0]][e[1]] = "H"
-            if agent.index(e) == len(agent) - 1:
-                table[e[0]][e[1]] = "T"
 
     for e in valid_moves:
         if e != None:
-            table[e[0]][e[1]] = "V"
+            table[e[0]][e[1]] = "8"
 
     for e in food_positions:
-        table[e[0]][e[1]] = "F"
+        table[e[0]][e[1]] = "7"
 
-    table[near_food[0]][near_food[1]] = "□"
-    print(table)
+    return np.asfarray(table, float)
+
+
+# kaggle will run a simulation with the below function's output over the period of a round.
+# This function brings everything together and produces a move to be accepted by the kaggle env.
 
 
 def agent(obs_dict, config_dict):
@@ -265,14 +290,16 @@ def agent(obs_dict, config_dict):
     configuration = Configuration(config_dict)
     player_index = observation.index
 
-    agent_positions = get_all_geese(observation, configuration)
-    food_positions = get_all_food(observation, configuration)
+    agent_positions = get_all_geese(observation)
+    food_positions = get_all_food(observation)
     near_food = get_nearest_food(agent_positions, food_positions, player_index)
     potential_moves = get_potential_moves(agent_positions)
     valid_moves = get_valid_moves(agent_positions, potential_moves, player_index)
     if player_index == 0:
-        print_table(
-            player_index, agent_positions, food_positions, near_food, valid_moves
+        print(
+            get_table(
+                player_index, agent_positions, food_positions, near_food, valid_moves
+            )
         )
 
     return get_move(
@@ -285,7 +312,6 @@ def agent(obs_dict, config_dict):
     )
 
 
-# %%
-env = make("hungry_geese", debug=True)
+env = make("hungry_geese")
 env.run([agent, agent, agent, agent])
 env.render(mode="ipython")
